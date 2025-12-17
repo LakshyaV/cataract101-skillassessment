@@ -11,18 +11,16 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms
 
 
-# ====== CONFIG ======
-DATA_ROOT = "/Volumes/Extreme SSD/cataract-101"  # <-- CHANGE if needed
+DATA_ROOT = "/Volumes/Extreme SSD/cataract-101"
 
-CLIP_LEN = 16           # frames per clip
-FRAME_SUBSAMPLE = 15    # gap between frames (in frames)
+CLIP_LEN = 16
+FRAME_SUBSAMPLE = 15
 BATCH_SIZE = 2
 EPOCHS = 5
 LR = 1e-4
 VAL_RATIO = 0.2
 RANDOM_SEED = 42
 
-# Device (M1/M2/M3 -> mps)
 device = torch.device(
     "mps" if torch.backends.mps.is_available()
     else ("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,7 +28,6 @@ device = torch.device(
 print(f"Using device: {device}")
 
 
-# ====== DATASET UTILS ======
 def build_meta(root: str) -> pd.DataFrame:
     """
     Read videos.csv (semicolon-separated) and create a Label column:
@@ -43,7 +40,6 @@ def build_meta(root: str) -> pd.DataFrame:
 
     df = pd.read_csv(csv_path, sep=";")
 
-    # Normalize column names: remove spaces
     df.columns = [c.strip().replace(" ", "") for c in df.columns]
 
     expected_cols = {"VideoID", "Frames", "FPS", "Surgeon", "Experience"}
@@ -53,7 +49,6 @@ def build_meta(root: str) -> pd.DataFrame:
             "Check the header of videos.csv."
         )
 
-    # Experience 1 -> label 0, Experience 2 -> label 1
     df["Label"] = (df["Experience"].astype(int) - 1).clip(0, 1)
     return df
 
@@ -181,7 +176,6 @@ class CataractSkillDataset(Dataset):
         return clip, torch.tensor(label, dtype=torch.long)
 
 
-# ====== MODEL ======
 class EffNetLSTM(nn.Module):
     """
     EfficientNet-B0 frame encoder + LSTM sequence model for binary skill classification.
@@ -202,14 +196,12 @@ class EffNetLSTM(nn.Module):
         )
         base = models.efficientnet_b0(weights=weights)
 
-        # Feature extractor: [B, 3, 224, 224] -> [B, 1280]
         self.feature_extractor = nn.Sequential(
             base.features,
             base.avgpool,
             nn.Flatten(),
         )
 
-        # (Optional) freeze CNN to speed up training at first
         for p in self.feature_extractor.parameters():
             p.requires_grad = False
 
@@ -232,20 +224,19 @@ class EffNetLSTM(nn.Module):
         x: [B, T, C, H, W]
         """
         B, T, C, H, W = x.shape
-        x = x.view(B * T, C, H, W)            # [B*T, C, H, W]
-        feats = self.feature_extractor(x)      # [B*T, 1280]
-        feats = feats.view(B, T, -1)          # [B, T, 1280]
-        lstm_out, _ = self.lstm(feats)        # [B, T, H_lstm]
-        last = lstm_out[:, -1, :]             # [B, H_lstm]
-        logits = self.classifier(last)        # [B, num_classes]
+        x = x.view(B * T, C, H, W)
+        feats = self.feature_extractor(x)
+        feats = feats.view(B, T, -1)
+        lstm_out, _ = self.lstm(feats)
+        last = lstm_out[:, -1, :]
+        logits = self.classifier(last)
         return logits
 
 
-# ====== TRAINING ======
 def collate_fn(batch):
     clips, labels = zip(*batch)
-    clips = torch.stack(clips, dim=0)   # [B, T, C, H, W]
-    labels = torch.stack(labels, dim=0) # [B]
+    clips = torch.stack(clips, dim=0)
+    labels = torch.stack(labels, dim=0)
     return clips, labels
 
 
@@ -373,7 +364,6 @@ def main():
             f"Val loss: {val_loss:.4f}, acc: {val_acc:.3f}"
         )
 
-        # Save best model so far
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             save_path = "effnet_lstm_cataract101_best.pt"
@@ -424,7 +414,7 @@ def evaluate_auc_acc():
         clips = clips.to(device)
         labels = labels.to(device)
         logits = model(clips)
-        probs = torch.softmax(logits, dim=1)[:, 1]  # prob of class 1
+        probs = torch.softmax(logits, dim=1)[:, 1]
 
         all_labels.append(labels.cpu())
         all_probs.append(probs.cpu())
@@ -442,5 +432,4 @@ def evaluate_auc_acc():
 
 
 if __name__ == "__main__":
-    # main()
     evaluate_auc_acc()

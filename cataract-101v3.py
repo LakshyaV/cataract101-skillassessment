@@ -12,13 +12,12 @@ from torchvision import models, transforms
 from sklearn.metrics import roc_auc_score, accuracy_score
 
 
-# ====== CONFIG ======
-DATA_ROOT = "/Volumes/Extreme SSD/cataract-101"  # <-- CHANGE if needed
+DATA_ROOT = "/Volumes/Extreme SSD/cataract-101"
 
-CLIP_LEN = 16           # frames per clip
-FRAME_SUBSAMPLE = 15    # gap between frames (in frames)
+CLIP_LEN = 16
+FRAME_SUBSAMPLE = 15
 BATCH_SIZE = 2
-EPOCHS = 7              # slightly longer, still baseline
+EPOCHS = 7
 LR = 1e-4
 VAL_RATIO = 0.2
 RANDOM_SEED = 42
@@ -32,7 +31,6 @@ device = torch.device(
 print(f"Using device: {device}")
 
 
-# ====== DATASET UTILS ======
 def build_meta(root: str) -> pd.DataFrame:
     """
     Read videos.csv (semicolon-separated) and create a Label column:
@@ -45,7 +43,6 @@ def build_meta(root: str) -> pd.DataFrame:
 
     df = pd.read_csv(csv_path, sep=";")
 
-    # Normalize column names: remove spaces
     df.columns = [c.strip().replace(" ", "") for c in df.columns]
 
     expected_cols = {"VideoID", "Frames", "FPS", "Surgeon", "Experience"}
@@ -55,7 +52,6 @@ def build_meta(root: str) -> pd.DataFrame:
             "Check the header of videos.csv."
         )
 
-    # Experience 1 -> label 0, Experience 2 -> label 1
     df["Label"] = (df["Experience"].astype(int) - 1).clip(0, 1)
     return df
 
@@ -202,7 +198,6 @@ class CataractSkillDataset(Dataset):
         return clip, torch.tensor(label, dtype=torch.long)
 
 
-# ====== MODEL ======
 class EffNetLSTM(nn.Module):
     """
     EfficientNet-B0 frame encoder + LSTM sequence model for binary skill classification.
@@ -223,14 +218,12 @@ class EffNetLSTM(nn.Module):
         )
         base = models.efficientnet_b0(weights=weights)
 
-        # Feature extractor: [B, 3, 224, 224] -> [B, 1280]
         self.feature_extractor = nn.Sequential(
             base.features,
             base.avgpool,
             nn.Flatten(),
         )
 
-        # (Optional) freeze CNN to speed up training at first
         for p in self.feature_extractor.parameters():
             p.requires_grad = False
 
@@ -253,12 +246,12 @@ class EffNetLSTM(nn.Module):
         x: [B, T, C, H, W]
         """
         B, T, C, H, W = x.shape
-        x = x.view(B * T, C, H, W)            # [B*T, C, H, W]
-        feats = self.feature_extractor(x)      # [B*T, 1280]
-        feats = feats.view(B, T, -1)          # [B, T, 1280]
-        lstm_out, _ = self.lstm(feats)        # [B, T, H_lstm]
-        last = lstm_out[:, -1, :]             # [B, H_lstm]
-        logits = self.classifier(last)        # [B, num_classes]
+        x = x.view(B * T, C, H, W)
+        feats = self.feature_extractor(x)
+        feats = feats.view(B, T, -1)
+        lstm_out, _ = self.lstm(feats)
+        last = lstm_out[:, -1, :]
+        logits = self.classifier(last)
         return logits
 
 
@@ -270,11 +263,10 @@ def unfreeze_backbone(model: EffNetLSTM):
         p.requires_grad = True
 
 
-# ====== TRAINING ======
 def collate_fn(batch):
     clips, labels = zip(*batch)
-    clips = torch.stack(clips, dim=0)   # [B, T, C, H, W]
-    labels = torch.stack(labels, dim=0) # [B]
+    clips = torch.stack(clips, dim=0)
+    labels = torch.stack(labels, dim=0)
     return clips, labels
 
 
@@ -371,8 +363,8 @@ def main():
     train_loader = DataLoader(
         train_ds,
         batch_size=BATCH_SIZE,
-        shuffle=True,   # simple shuffle, we handle imbalance with class weights
-        num_workers=0,  # keep 0 on Mac to avoid multiprocessing weirdness
+        shuffle=True,
+        num_workers=0,
         collate_fn=collate_fn,
     )
     val_loader = DataLoader(
@@ -385,7 +377,6 @@ def main():
 
     model = EffNetLSTM().to(device)
 
-    # ====== CLASS-WEIGHTED LOSS (based on train set) ======
     class_weights = compute_class_weights(train_ds.df)
     print(f"Class weights: {class_weights.tolist()}")
     class_weights = class_weights.to(device)
@@ -401,13 +392,12 @@ def main():
 
     for epoch in range(EPOCHS):
 
-        # After 1 warmup epoch, unfreeze backbone for fine-tuning
         if epoch == 1:
             print("🔓 Unfreezing EfficientNet backbone for fine-tuning")
             unfreeze_backbone(model)
             optimizer = torch.optim.AdamW(
                 filter(lambda p: p.requires_grad, model.parameters()),
-                lr=LR * 0.5,   # slightly lower LR when fine-tuning backbone
+                lr=LR * 0.5,
                 weight_decay=1e-4,
             )
 
@@ -422,7 +412,6 @@ def main():
             f"Val loss: {val_loss:.4f}, acc: {val_acc:.3f}"
         )
 
-        # Save best model so far (clip-level val acc as proxy)
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             save_path = "effnet_lstm_cataract101_best.pt"
@@ -475,9 +464,9 @@ def evaluate_auc_acc():
 
         for _ in range(NUM_EVAL_CLIPS):
             clip, _ = val_ds[idx]  # each call samples a different random clip
-            clip = clip.unsqueeze(0).to(device)  # [1, T, C, H, W]
+            clip = clip.unsqueeze(0).to(device)
             logits = model(clip)
-            prob = torch.softmax(logits, dim=1)[:, 1]  # prob of class 1
+            prob = torch.softmax(logits, dim=1)[:, 1]
             clip_probs.append(prob.item())
 
         mean_prob = float(np.mean(clip_probs))

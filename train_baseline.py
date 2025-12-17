@@ -14,12 +14,9 @@ from natsort import natsorted
 import pandas as pd
 from tqdm import tqdm
 
-# -------------------------
-# CONFIG
-# -------------------------
 DATA_ROOT = "/Volumes/Extreme SSD/cataract_dataset"
 FRAMES_DIR = os.path.join(DATA_ROOT, "frames")
-LABELS_CSV = os.path.join(DATA_ROOT, "skill_labels.csv")  # <-- make this file
+LABELS_CSV = os.path.join(DATA_ROOT, "skill_labels.csv")
 CLIP_LEN = 32
 BATCH_SIZE = 4
 NUM_EPOCHS = 10
@@ -28,9 +25,6 @@ WEIGHT_DECAY = 1e-3
 VAL_SPLIT = 0.2
 RANDOM_SEED = 42
 
-# -------------------------
-# UTIL: DEVICE
-# -------------------------
 def get_device():
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -41,9 +35,6 @@ def get_device():
 DEVICE = get_device()
 print(f"Using device: {DEVICE}")
 
-# -------------------------
-# LABEL LOADING
-# -------------------------
 def load_labels(csv_path):
     """
     CSV with columns: video_id,label
@@ -55,9 +46,6 @@ def load_labels(csv_path):
         labels[str(row["video_id"])] = int(row["label"])
     return labels
 
-# -------------------------
-# DATASET
-# -------------------------
 class CataractClipDataset(Dataset):
     def __init__(self, frames_dir, labels_dict, clip_len=32, transform=None):
         super().__init__()
@@ -80,12 +68,10 @@ class CataractClipDataset(Dataset):
             parts = fname.split("_")
             # e.g. wetlab_cataract_001_0001.jpg -> wetlab_cataract_001
             video_id = "_".join(parts[:3])
-            # only keep videos that have labels
             if video_id not in labels_dict:
                 continue
             self.video_to_frames.setdefault(video_id, []).append(f)
 
-        # Sort frames within each video
         for vid in self.video_to_frames:
             self.video_to_frames[vid] = natsorted(self.video_to_frames[vid])
 
@@ -129,13 +115,10 @@ class CataractClipDataset(Dataset):
                 img = self.transform(img)
             imgs.append(img)
 
-        clip_tensor = torch.stack(imgs, dim=0)  # (T, C, H, W)
+        clip_tensor = torch.stack(imgs, dim=0)
         label = torch.tensor(self.labels_dict[video_id], dtype=torch.float32)
         return clip_tensor, label
 
-# -------------------------
-# MODEL: EfficientNet-B0 + LSTM
-# -------------------------
 class FrameEncoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -144,11 +127,9 @@ class FrameEncoder(nn.Module):
         self.backbone = base.features
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.out_dim = 1280
-        # store normalization transform for dataloader
         self.preprocess = weights.transforms()
 
     def forward(self, x):
-        # x: (B, 3, H, W)
         x = self.backbone(x)
         x = self.pool(x)
         x = x.flatten(1)
@@ -177,19 +158,15 @@ class CNNLSTM(nn.Module):
         )
 
     def forward(self, x):
-        # x: (B, T, C, H, W)
         B, T, C, H, W = x.shape
         x = x.view(B * T, C, H, W)
-        feats = self.encoder(x)          # (B*T, F)
-        feats = feats.view(B, T, -1)     # (B, T, F)
-        lstm_out, _ = self.lstm(feats)   # (B, T, H)
-        last = lstm_out[:, -1, :]        # (B, H)
-        logits = self.classifier(last)   # (B, 1)
+        feats = self.encoder(x)
+        feats = feats.view(B, T, -1)
+        lstm_out, _ = self.lstm(feats)
+        last = lstm_out[:, -1, :]
+        logits = self.classifier(last)
         return logits.squeeze(1)
 
-# -------------------------
-# TRAIN / EVAL
-# -------------------------
 def train_epoch(model, loader, optimizer, criterion, device):
     model.train()
     running_loss = 0.0
@@ -236,9 +213,6 @@ def eval_epoch(model, loader, criterion, device):
 
     return running_loss / total, correct / total
 
-# -------------------------
-# MAIN
-# -------------------------
 def main():
     random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)

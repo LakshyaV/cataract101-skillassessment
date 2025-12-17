@@ -52,7 +52,7 @@ def evaluate_auc_acc():
         clips = clips.to(device)
         labels = labels.to(device)
         logits = model(clips)
-        probs = torch.softmax(logits, dim=1)[:, 1]  # prob of class 1
+        probs = torch.softmax(logits, dim=1)[:, 1]
 
         all_labels.append(labels.cpu())
         all_probs.append(probs.cpu())
@@ -68,6 +68,4 @@ def evaluate_auc_acc():
     print(f"Validation Accuracy: {acc:.3f}")
 
 if __name__ == "__main__":
-    # after training finishes (or comment out main() and just call this)
-    # main()
     evaluate_auc_acc()
