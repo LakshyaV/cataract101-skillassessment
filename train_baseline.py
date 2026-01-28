@@ -36,10 +36,6 @@ DEVICE = get_device()
 print(f"Using device: {DEVICE}")
 
 def load_labels(csv_path):
-    """
-    CSV with columns: video_id,label
-    label ∈ {0,1}
-    """
     df = pd.read_csv(csv_path)
     labels = {}
     for _, row in df.iterrows():
@@ -54,19 +50,16 @@ class CataractClipDataset(Dataset):
         self.clip_len = clip_len
         self.transform = transform
 
-        # Get all frame files
         all_frames = glob.glob(os.path.join(frames_dir, "*.jpg"))
         all_frames += glob.glob(os.path.join(frames_dir, "*.png"))
 
         if len(all_frames) == 0:
             raise RuntimeError(f"No frame images found in {frames_dir}")
 
-        # Group frames by video id (prefix like wetlab_cataract_001)
         self.video_to_frames = {}
         for f in all_frames:
             fname = os.path.basename(f)
             parts = fname.split("_")
-            # e.g. wetlab_cataract_001_0001.jpg -> wetlab_cataract_001
             video_id = "_".join(parts[:3])
             if video_id not in labels_dict:
                 continue
@@ -79,8 +72,7 @@ class CataractClipDataset(Dataset):
 
         if len(self.video_ids) == 0:
             raise RuntimeError(
-                "No videos found that match your labels. "
-                "Check that video_id in the CSV matches the filename prefix."
+                "No videos found that match your labels. Check that video_id in the CSV matches the filename prefix."
             )
 
         print(f"Found {len(self.video_ids)} labeled videos.")
@@ -89,10 +81,6 @@ class CataractClipDataset(Dataset):
         return len(self.video_ids)
 
     def _sample_clip_paths(self, frames):
-        """
-        Randomly sample a contiguous clip of length clip_len.
-        Loop-pad if too short.
-        """
         if len(frames) < self.clip_len:
             reps = (self.clip_len + len(frames) - 1) // len(frames)
             frames = (frames * reps)[: self.clip_len]
@@ -219,9 +207,8 @@ def main():
 
     labels_dict = load_labels(LABELS_CSV)
 
-    # temporary encoder instance just to get the transform
     temp_encoder = FrameEncoder()
-    preprocess = temp_encoder.preprocess  # includes resize + normalize
+    preprocess = temp_encoder.preprocess
 
     dataset = CataractClipDataset(
         frames_dir=FRAMES_DIR,
