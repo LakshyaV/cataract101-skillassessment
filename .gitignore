@@ -9,3 +9,6 @@ env/
 
 # macOS
 .DS_Store
+
+.effnet_lstm_cataract101_bestv4.pt
+.train_baseline.py
